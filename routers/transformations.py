@@ -29,12 +29,12 @@ router = APIRouter(
     tags=["Transformation"]
 )
 
-def run(query):  
+async def run(query):  
     template = prompts.DECOMPOSITION_SYSTEM_PROMPT
     try:
         prompt = ChatPromptTemplate.from_messages([("system", template),("human", "Input: {query}")])
         chain = prompt | structured_llm
-        response = chain.invoke({"query" : query})
+        response = await chain.ainvoke({"query" : query})
         app_logger.info(f"Decomposition done...")
         return response.queries
     except Exception as e:
@@ -42,10 +42,10 @@ def run(query):
         raise
     
 @router.post("/decompose")
-def decomposition(transformQuery :TransformQuery):
+async def decomposition(transformQuery :TransformQuery):
     print(f"{transformQuery.text = }")
     if (transformQuery.text is not None) and (transformQuery.text != ""):
-        response = run(transformQuery.text)
+        response = await run(transformQuery.text)
         return {"response" : response}
     return {"response": None}
     

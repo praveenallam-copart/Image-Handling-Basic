@@ -32,6 +32,7 @@ class ImageDescriptionResponse(BaseModel):
 class QueryResponse(BaseModel):
     answer: Union[Dict, None] = Field(description = "The answer for the question asked in query in the given image description.It is a Dictionary with key as query/question and value as answer. Every realted query should be present and should get answered", default = None)
     related_queries: Union[List, None] = Field(description = "The queries/query from list of queries which are asnwered, if None got answered return None or List of queries/query answered", default = None)
+    reason: str = Field(description = "Reason why chose this approach")
     
 app_logger = get_app_logger()
 error_logger = get_error_logger()
@@ -50,7 +51,7 @@ async def describe_image( encoded_image: str, name: str):
     app_logger.info(f"getting description of {name = }")
     try:
         messages = [
-            {"role" : "system", "content" : prompts.IMAGE_DESCRIPTION_PROMPT},
+            {"role" : "system", "content" : prompts.IMAGE_DESCRIPTION_SUMMARY_PROMPT},
             {"role" : "user", "content" : [{"type" : "image_url", "image_url" : {"url" : f"data:image/png;base64,{encoded_image}", "detail": "auto"}}]}
         ]
         response = await structured_llm.ainvoke(messages)
@@ -59,17 +60,17 @@ async def describe_image( encoded_image: str, name: str):
     except Exception as e:
         error_logger.error(f"Error processing image: {str(e)}")
          
-async def get_answer(image_description: str, queries: Union[List, str]):
+async def get_answer(image_description: str, queries: Union[List, str], summary: str):
     try:
         prompt = ChatPromptTemplate([
             ("system", prompts.ANSWER_PROMPT),
-            ("human", "Image Description: {image_description}\nQueries: {queries}")
+            ("human", "Image Description: {image_description}\nQueries: {queries}\nSummary: {summary}")
         ])
 
         answer_llm = prompt | llm.with_structured_output(QueryResponse)
-        response = await answer_llm.ainvoke({"image_description" : image_description, "queries" : queries})
+        response = await answer_llm.ainvoke({"image_description" : image_description, "queries" : queries, "summary" : summary})
         app_logger.info(f"got the answer for the given text....")
-        return response.answer, response.related_queries
+        return response.answer, response.related_queries, response.reason
     except Exception as e:
         error_logger.error(f"An unexpected e occurred: {type(e).__name__, str(e)}")
         
@@ -100,9 +101,9 @@ async def run(session, image_content: Attachment, access_token: str, user_id: st
         description, summary, alert, reason, metadata = await describe_image(encoded_image, name)
         answer, related_queries = None, None
         if (queries is not None) and (queries != "") and (len(queries) > 0):
-            answer, related_queries = await get_answer(image_description=description, queries=queries)
+            answer, related_queries, answer_reason = await get_answer(image_description=description, queries=queries, summary = summary)
         description = f"The {name} Image is about:\n\n" + description
-        return {"description" : description, "summary" : summary, "answer" : answer, "alert" : alert, "reason" : reason,"related_queries" : related_queries, "metadata" : metadata, "filename" : filename, "name" : name}
+        return {"description" : description, "summary" : summary, "answer" : answer,"answer_reason" : answer_reason, "alert" : alert, "reason" : reason,"related_queries" : related_queries, "metadata" : metadata, "filename" : filename, "name" : name}
     except Exception as e:
         error_logger.error(f"An unexpected e occurred: {type(e).__name__, str(e)}")
         return {"description" : "Something went wrong while processing the image. Please try again later.", "status" : "error"}
